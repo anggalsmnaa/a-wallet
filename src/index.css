@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+
+  --bg-app-light: #f6f7f5;
+  --bg-app-dark: #0b0f14;
+  --bg-card-light: #ffffff;
+  --bg-card-dark: #131922;
+  --bg-elevated-light: #eef1f0;
+  --bg-elevated-dark: #1c2430;
+  --text-primary-light: #0f172a;
+  --text-primary-dark: #f8fafc;
+  --text-muted-light: #475569;
+  --text-muted-dark: #94a3b8;
+  --border-subtle-light: #e2e8f0;
+  --border-subtle-dark: #1e293b;
+  --accent-light: #059669;
+  --accent-dark: #10b981;
+
+  --bg-app: var(--bg-app-light);
+  --bg-card: var(--bg-card-light);
+  --bg-elevated: var(--bg-elevated-light);
+  --text-primary: var(--text-primary-light);
+  --text-muted: var(--text-muted-light);
+  --border-subtle: var(--border-subtle-light);
+  --accent: var(--accent-light);
+
+  @media (prefers-color-scheme: dark) {
+    --bg-app: var(--bg-app-dark);
+    --bg-card: var(--bg-card-dark);
+    --bg-elevated: var(--bg-elevated-dark);
+    --text-primary: var(--text-primary-dark);
+    --text-muted: var(--text-muted-dark);
+    --border-subtle: var(--border-subtle-dark);
+    --accent: var(--accent-dark);
+  }
+
+  @supports (color: light-dark(white, black)) {
+    --bg-app: light-dark(var(--bg-app-light), var(--bg-app-dark));
+    --bg-card: light-dark(var(--bg-card-light), var(--bg-card-dark));
+    --bg-elevated: light-dark(var(--bg-elevated-light), var(--bg-elevated-dark));
+    --text-primary: light-dark(var(--text-primary-light), var(--text-primary-dark));
+    --text-muted: light-dark(var(--text-muted-light), var(--text-muted-dark));
+    --border-subtle: light-dark(var(--border-subtle-light), var(--border-subtle-dark));
+    --accent: light-dark(var(--accent-light), var(--accent-dark));
+  }
+
+  accent-color: var(--accent);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  select:not(:disabled),
+  label[for],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+/* Ensure form controls stay >= 16px to prevent iOS Safari auto-zoom */
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: max(1rem, 1em);
+}
+
+/* Native dialog modal scroll containment (modern-web-guidance) */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  background: rgba(2, 6, 23, 0.65);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.safe-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

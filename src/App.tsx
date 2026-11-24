@@ -3,6 +3,8 @@ import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
+  CalendarClock,
+  CheckCircle2,
   Download,
   Eye,
   EyeOff,
@@ -32,10 +34,12 @@ import {
 } from './utils/format';
 import { TransactionModal } from './components/TransactionModal';
 import { WalletModal } from './components/WalletModal';
+import { InstallmentModal } from './components/InstallmentModal';
 import { CategoryIcon } from './components/CategoryIcon';
 import type { Transaction } from './types';
 
 type Tab = 'home' | 'transactions' | 'budget' | 'wallets';
+type WalletSubTab = 'wallets' | 'installments';
 
 export function App() {
   const {
@@ -50,6 +54,9 @@ export function App() {
     deleteTransaction,
     addWallet,
     deleteWallet,
+    addInstallment,
+    payInstallment,
+    deleteInstallment,
     updateCategoryBudget,
     toggleHideBalances,
     exportJSON,
@@ -59,8 +66,11 @@ export function App() {
   } = useWalletStore();
 
   const [tab, setTab] = useState<Tab>('home');
+  const [walletSubTab, setWalletSubTab] = useState<WalletSubTab>('wallets');
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [installmentModalOpen, setInstallmentModalOpen] = useState(false);
+  const [payWalletByInst, setPayWalletByInst] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'expense' | 'income' | 'transfer'>('all');
   const [selectedMonth, setSelectedMonth] = useState(() => getMonthKey(getTodayISO()));
@@ -68,6 +78,8 @@ export function App() {
   const [budgetDraft, setBudgetDraft] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const currentMonthKey = getMonthKey(getTodayISO());
 
   const isStandalone =
     typeof window !== 'undefined' &&
@@ -100,6 +112,31 @@ export function App() {
     }
     return { income, expense, net: income - expense, byCategory };
   }, [data.transactions, selectedMonth]);
+
+  const installmentSummary = useMemo(() => {
+    const active = data.installments.filter((i) => i.paidMonths < i.totalMonths);
+    const completed = data.installments.filter((i) => i.paidMonths >= i.totalMonths);
+    let totalRemainingDebt = 0;
+    let dueThisMonth = 0;
+    let unpaidThisMonthCount = 0;
+
+    for (const inst of active) {
+      const remMonths = inst.totalMonths - inst.paidMonths;
+      totalRemainingDebt += remMonths * inst.monthlyAmount;
+      if (inst.lastPaidMonth !== currentMonthKey) {
+        dueThisMonth += inst.monthlyAmount;
+        unpaidThisMonthCount += 1;
+      }
+    }
+
+    return {
+      active,
+      completed,
+      totalRemainingDebt,
+      dueThisMonth,
+      unpaidThisMonthCount,
+    };
+  }, [data.installments, currentMonthKey]);
 
   const filteredTransactions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -166,7 +203,11 @@ export function App() {
   };
 
   const themeLabel =
-    theme === 'light' ? 'Tema terang (tap untuk ganti)' : theme === 'dark' ? 'Tema gelap (tap untuk ganti)' : 'Tema sistem (tap untuk ganti)';
+    theme === 'light'
+      ? 'Tema terang (tap untuk ganti)'
+      : theme === 'dark'
+        ? 'Tema gelap (tap untuk ganti)'
+        : 'Tema sistem (tap untuk ganti)';
 
   const renderTxRow = (tx: Transaction) => {
     const cat = tx.categoryId ? categoryMap[tx.categoryId] : undefined;
@@ -241,7 +282,7 @@ export function App() {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col pb-28">
-      {/* Solid Header (no backdrop-blur to honor glassmorphism dose cap) */}
+      {/* Solid Header */}
       <header
         className="safe-top sticky top-0 z-20 flex items-center justify-between border-b px-4 pb-3.5"
         style={{
@@ -323,7 +364,7 @@ export function App() {
 
       {/* Main Content */}
       <main className="flex-1 space-y-5 px-4 pt-4">
-        {/* Storage Error State (R-27) */}
+        {/* Storage Error State */}
         {storageError && (
           <div
             role="alert"
@@ -362,7 +403,7 @@ export function App() {
         {/* TAB: HOME */}
         {tab === 'home' && (
           <>
-            {/* Solid Deep Emerald Net Worth Card (R-01, R-25, R-12) */}
+            {/* Solid Deep Emerald Net Worth Card */}
             <section className="rounded-2xl bg-[#065f46] p-5 text-white">
               <p className="text-xs font-medium text-emerald-100">Total Saldo Bersih</p>
               <p className="mt-1 text-3xl font-extrabold tracking-tight tabular-nums">
@@ -397,7 +438,10 @@ export function App() {
                 <h2 className="text-sm font-bold">Dompet Saya</h2>
                 <button
                   type="button"
-                  onClick={() => setTab('wallets')}
+                  onClick={() => {
+                    setWalletSubTab('wallets');
+                    setTab('wallets');
+                  }}
                   className="min-h-9 px-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
                 >
                   Kelola
@@ -429,6 +473,46 @@ export function App() {
                 ))}
               </div>
             </section>
+
+            {/* Installment Summary Card (separate from Net Worth) */}
+            {installmentSummary.active.length > 0 && (
+              <section>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWalletSubTab('installments');
+                    setTab('wallets');
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-colors hover:border-emerald-500"
+                  style={{
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-subtle)',
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                      style={{ backgroundColor: 'var(--bg-elevated)' }}
+                    >
+                      <CalendarClock className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                        Tagihan Cicilan Bulan Ini
+                      </p>
+                      <p className="mt-0.5 text-base font-bold tabular-nums">
+                        {installmentSummary.unpaidThisMonthCount > 0
+                          ? formatIDR(installmentSummary.dueThisMonth, data.hideBalances)
+                          : 'Semua terbayar bulan ini'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    {installmentSummary.active.length} aktif
+                  </span>
+                </button>
+              </section>
+            )}
 
             {/* Recent Transactions */}
             <section>
@@ -689,139 +773,380 @@ export function App() {
           </section>
         )}
 
-        {/* TAB: WALLETS & BACKUP */}
+        {/* TAB: WALLETS & INSTALLMENTS */}
         {tab === 'wallets' && (
           <section className="space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold">Daftar Dompet</h2>
+            {/* Sub-tab switcher */}
+            <div
+              className="grid grid-cols-2 gap-1.5 rounded-2xl p-1"
+              style={{ backgroundColor: 'var(--bg-elevated)' }}
+            >
               <button
                 type="button"
-                onClick={() => setWalletModalOpen(true)}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                onClick={() => setWalletSubTab('wallets')}
+                className={`min-h-11 rounded-lg text-xs font-semibold transition-colors ${
+                  walletSubTab === 'wallets' ? 'bg-emerald-600 text-white' : 'opacity-75'
+                }`}
               >
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                Tambah Dompet
+                Dompet ({data.wallets.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setWalletSubTab('installments')}
+                className={`min-h-11 rounded-lg text-xs font-semibold transition-colors ${
+                  walletSubTab === 'installments' ? 'bg-emerald-600 text-white' : 'opacity-75'
+                }`}
+              >
+                Cicilan ({installmentSummary.active.length})
               </button>
             </div>
 
-            <div className="space-y-2.5">
-              {data.wallets.map((w) => (
+            {walletSubTab === 'wallets' ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold">Daftar Dompet</h2>
+                  <button
+                    type="button"
+                    onClick={() => setWalletModalOpen(true)}
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Tambah Dompet
+                  </button>
+                </div>
+
+                <div className="space-y-2.5">
+                  {data.wallets.map((w) => (
+                    <div
+                      key={w.id}
+                      className="flex items-center justify-between rounded-2xl border p-4"
+                      style={{
+                        backgroundColor: 'var(--bg-card)',
+                        borderColor: 'var(--border-subtle)',
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="h-10 w-10 rounded-lg"
+                          style={{ backgroundColor: w.color }}
+                        />
+                        <div>
+                          <p className="font-semibold">{w.name}</p>
+                          <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
+                            {w.type}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold tabular-nums">
+                          {formatIDR(walletBalances[w.id] ?? 0, data.hideBalances)}
+                        </span>
+                        {data.wallets.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => deleteWallet(w.id)}
+                            aria-label={`Hapus dompet ${w.name}`}
+                            className="flex h-11 w-11 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-500/10"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Backup & Data */}
                 <div
-                  key={w.id}
-                  className="flex items-center justify-between rounded-2xl border p-4"
+                  className="space-y-3 rounded-2xl border p-4"
                   style={{
                     backgroundColor: 'var(--bg-card)',
                     borderColor: 'var(--border-subtle)',
                   }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="h-10 w-10 rounded-lg"
-                      style={{ backgroundColor: w.color }}
-                    />
+                  <h2 className="text-sm font-bold">Cadangkan & Kelola Data</h2>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Semua data tersimpan offline di iPhone kamu. Unduh backup secara berkala agar aman.
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleExportJSON}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border text-xs font-semibold"
+                      style={{
+                        backgroundColor: 'var(--bg-elevated)',
+                        borderColor: 'var(--border-subtle)',
+                      }}
+                    >
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                      Backup JSON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border text-xs font-semibold"
+                      style={{
+                        backgroundColor: 'var(--bg-elevated)',
+                        borderColor: 'var(--border-subtle)',
+                      }}
+                    >
+                      <Upload className="h-4 w-4" aria-hidden="true" />
+                      Restore JSON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportCSV}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border text-xs font-semibold"
+                      style={{
+                        backgroundColor: 'var(--bg-elevated)',
+                        borderColor: 'var(--border-subtle)',
+                      }}
+                    >
+                      <Download className="h-4 w-4" aria-hidden="true" />
+                      Export CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Reset semua transaksi, dompet, dan cicilan ke awal?')) {
+                          resetAllData();
+                          showToast('Data berhasil di-reset.');
+                        }
+                      }}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 text-xs font-semibold text-rose-600 dark:text-rose-400"
+                    >
+                      <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                      Reset Data
+                    </button>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/json"
+                    onChange={handleImportFile}
+                    className="hidden"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Installment Summary Card */}
+                <div
+                  className="rounded-2xl border p-4"
+                  style={{
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-subtle)',
+                  }}
+                >
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <p className="font-semibold">{w.name}</p>
-                      <p className="text-xs uppercase" style={{ color: 'var(--text-muted)' }}>
-                        {w.type}
+                      <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                        Total Sisa Cicilan
+                      </p>
+                      <p className="mt-1 text-lg font-extrabold text-rose-600 tabular-nums dark:text-rose-400">
+                        {formatCompactIDR(installmentSummary.totalRemainingDebt, data.hideBalances)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                        Belum Dibayar Bulan Ini
+                      </p>
+                      <p className="mt-1 text-lg font-extrabold tabular-nums">
+                        {formatCompactIDR(installmentSummary.dueThisMonth, data.hideBalances)}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold tabular-nums">
-                      {formatIDR(walletBalances[w.id] ?? 0, data.hideBalances)}
-                    </span>
-                    {data.wallets.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => deleteWallet(w.id)}
-                        aria-label={`Hapus dompet ${w.name}`}
-                        className="flex h-11 w-11 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-500/10"
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                    )}
-                  </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Backup & Data */}
-            <div
-              className="space-y-3 rounded-2xl border p-4"
-              style={{
-                backgroundColor: 'var(--bg-card)',
-                borderColor: 'var(--border-subtle)',
-              }}
-            >
-              <h2 className="text-sm font-bold">Cadangkan & Kelola Data</h2>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Semua data tersimpan offline di iPhone kamu. Unduh backup secara berkala agar aman.
-              </p>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold">Cicilan Aktif</h2>
+                  <button
+                    type="button"
+                    onClick={() => setInstallmentModalOpen(true)}
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Tambah Cicilan
+                  </button>
+                </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={handleExportJSON}
-                  className="flex min-h-11 items-center justify-center gap-2 rounded-lg border text-xs font-semibold"
-                  style={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    borderColor: 'var(--border-subtle)',
-                  }}
-                >
-                  <Download className="h-4 w-4" aria-hidden="true" />
-                  Backup JSON
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex min-h-11 items-center justify-center gap-2 rounded-lg border text-xs font-semibold"
-                  style={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    borderColor: 'var(--border-subtle)',
-                  }}
-                >
-                  <Upload className="h-4 w-4" aria-hidden="true" />
-                  Restore JSON
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportCSV}
-                  className="flex min-h-11 items-center justify-center gap-2 rounded-lg border text-xs font-semibold"
-                  style={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    borderColor: 'var(--border-subtle)',
-                  }}
-                >
-                  <Download className="h-4 w-4" aria-hidden="true" />
-                  Export CSV
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm('Reset semua transaksi dan saldo ke awal?')) {
-                      resetAllData();
-                      showToast('Data berhasil di-reset.');
-                    }
-                  }}
-                  className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 text-xs font-semibold text-rose-600 dark:text-rose-400"
-                >
-                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                  Reset Data
-                </button>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/json"
-                onChange={handleImportFile}
-                className="hidden"
-              />
-            </div>
+                {installmentSummary.active.length === 0 ? (
+                  <div
+                    className="rounded-2xl border p-6 text-center"
+                    style={{
+                      backgroundColor: 'var(--bg-card)',
+                      borderColor: 'var(--border-subtle)',
+                    }}
+                  >
+                    <p className="text-sm font-semibold">Belum ada cicilan aktif</p>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Catat tagihan paylater, kredit, atau pinjaman dengan nominal tetap bulanan agar mudah dipantau.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {installmentSummary.active.map((inst) => {
+                      const remMonths = inst.totalMonths - inst.paidMonths;
+                      const remAmount = remMonths * inst.monthlyAmount;
+                      const pct = Math.min(100, Math.round((inst.paidMonths / inst.totalMonths) * 100));
+                      const paidThisMonth = inst.lastPaidMonth === currentMonthKey;
+                      const selectedWalletId =
+                        payWalletByInst[inst.id] ?? data.wallets[1]?.id ?? data.wallets[0]?.id ?? '';
+
+                      const interestInfo =
+                        inst.principalAmount && inst.principalAmount > 0
+                          ? {
+                              amount: inst.monthlyAmount * inst.totalMonths - inst.principalAmount,
+                              pct: (
+                                ((inst.monthlyAmount * inst.totalMonths - inst.principalAmount) /
+                                  inst.principalAmount) *
+                                100
+                              ).toFixed(1),
+                            }
+                          : null;
+
+                      return (
+                        <div
+                          key={inst.id}
+                          className="space-y-3 rounded-2xl border p-4"
+                          style={{
+                            backgroundColor: 'var(--bg-card)',
+                            borderColor: 'var(--border-subtle)',
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-bold">{inst.name}</p>
+                              <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                Jatuh tempo tgl {inst.dueDay} • {inst.paidMonths}/{inst.totalMonths} bulan
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="font-bold tabular-nums">
+                                {formatIDR(inst.monthlyAmount, data.hideBalances)}
+                                <span className="text-xs font-normal" style={{ color: 'var(--text-muted)' }}>
+                                  /bln
+                                </span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => deleteInstallment(inst.id)}
+                                aria-label={`Hapus cicilan ${inst.name}`}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-500/10"
+                              >
+                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div
+                            className="h-2 w-full overflow-hidden rounded-lg"
+                            style={{ backgroundColor: 'var(--bg-elevated)' }}
+                          >
+                            <div
+                              className="h-full rounded-lg bg-emerald-500 transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <span style={{ color: 'var(--text-muted)' }}>
+                              Sisa: <strong style={{ color: 'var(--text-primary)' }}>{formatIDR(remAmount, data.hideBalances)}</strong> ({remMonths} bln)
+                            </span>
+                            {interestInfo && interestInfo.amount > 0 && (
+                              <span className="text-rose-600 tabular-nums dark:text-rose-400">
+                                Bunga: {formatCompactIDR(interestInfo.amount, data.hideBalances)} ({interestInfo.pct}%)
+                              </span>
+                            )}
+                          </div>
+
+                          {paidThisMonth ? (
+                            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                              Sudah dibayar bulan ini
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 pt-1">
+                              <select
+                                aria-label={`Pilih dompet untuk bayar ${inst.name}`}
+                                value={selectedWalletId}
+                                onChange={(e) =>
+                                  setPayWalletByInst((prev) => ({
+                                    ...prev,
+                                    [inst.id]: e.target.value,
+                                  }))
+                                }
+                                className="min-h-11 flex-1 rounded-lg border px-2.5 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                                style={{
+                                  backgroundColor: 'var(--bg-elevated)',
+                                  borderColor: 'var(--border-subtle)',
+                                }}
+                              >
+                                {data.wallets.map((w) => (
+                                  <option key={w.id} value={w.id}>
+                                    {w.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!selectedWalletId) return;
+                                  payInstallment(inst.id, selectedWalletId);
+                                  showToast(`Cicilan ${inst.name} bulan ini tercatat!`);
+                                }}
+                                className="min-h-11 shrink-0 rounded-lg bg-emerald-600 px-3.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                              >
+                                Bayar Bulan Ini
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {installmentSummary.completed.length > 0 && (
+                  <div className="space-y-2.5 pt-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                      Lunas
+                    </h3>
+                    {installmentSummary.completed.map((inst) => (
+                      <div
+                        key={inst.id}
+                        className="flex items-center justify-between rounded-2xl border p-3.5 opacity-75"
+                        style={{
+                          backgroundColor: 'var(--bg-card)',
+                          borderColor: 'var(--border-subtle)',
+                        }}
+                      >
+                        <div>
+                          <p className="font-semibold">{inst.name}</p>
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                            Lunas ({inst.totalMonths}/{inst.totalMonths} bln)
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteInstallment(inst.id)}
+                          aria-label={`Hapus riwayat cicilan ${inst.name}`}
+                          className="flex h-10 w-10 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-500/10"
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </section>
         )}
       </main>
 
-      {/* Bottom Tab Bar (only element using backdrop-blur) */}
+      {/* Bottom Tab Bar */}
       <nav
         aria-label="Navigasi utama"
         className="safe-bottom fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-md"
@@ -906,6 +1231,15 @@ export function App() {
         onSave={(w) => {
           addWallet(w);
           showToast(`Dompet "${w.name}" ditambahkan!`);
+        }}
+      />
+
+      <InstallmentModal
+        open={installmentModalOpen}
+        onClose={() => setInstallmentModalOpen(false)}
+        onSave={(inst) => {
+          addInstallment(inst);
+          showToast(`Cicilan "${inst.name}" ditambahkan!`);
         }}
       />
     </div>

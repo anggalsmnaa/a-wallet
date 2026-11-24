@@ -43,9 +43,21 @@ export interface Transaction {
   createdAt: number;
 }
 
+export interface Installment {
+  id: string;
+  name: string;
+  monthlyAmount: number;
+  totalMonths: number;
+  paidMonths: number;
+  dueDay: number; // 1 - 31
+  principalAmount?: number;
+  lastPaidMonth?: string; // YYYY-MM
+}
+
 export interface WalletData {
   wallets: Wallet[];
   categories: Category[];
   transactions: Transaction[];
+  installments: Installment[];
   hideBalances: boolean;
 }

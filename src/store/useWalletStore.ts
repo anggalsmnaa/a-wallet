@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Category, ThemePreference, Transaction, Wallet, WalletData } from '../types';
+import type { Category, Installment, ThemePreference, Transaction, Wallet, WalletData } from '../types';
 import { getTodayISO, getMonthKey } from '../utils/format';
 
 const STORAGE_KEY = 'a-wallet:data:v1';
@@ -28,6 +28,7 @@ const DEFAULT_DATA: WalletData = {
   wallets: DEFAULT_WALLETS,
   categories: DEFAULT_CATEGORIES,
   transactions: [],
+  installments: [],
   hideBalances: false,
 };
 
@@ -37,7 +38,6 @@ function loadInitialData(): { data: WalletData; error: string | null } {
     if (!raw) return { data: DEFAULT_DATA, error: null };
     const parsed = JSON.parse(raw) as Partial<WalletData>;
 
-    // Migrate legacy categories that might lack icon field
     const categories =
       Array.isArray(parsed.categories) && parsed.categories.length > 0
         ? parsed.categories.map((c) => {
@@ -54,6 +54,7 @@ function loadInitialData(): { data: WalletData; error: string | null } {
         wallets: Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : DEFAULT_WALLETS,
         categories,
         transactions: Array.isArray(parsed.transactions) ? parsed.transactions : [],
+        installments: Array.isArray(parsed.installments) ? parsed.installments : [],
         hideBalances: Boolean(parsed.hideBalances),
       },
       error: null,
@@ -175,6 +176,56 @@ export function useWalletStore() {
     }));
   }, []);
 
+  const addInstallment = useCallback((inst: Omit<Installment, 'id'>) => {
+    const item: Installment = {
+      ...inst,
+      id: `inst-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    };
+    setData((prev) => ({
+      ...prev,
+      installments: [item, ...prev.installments],
+    }));
+  }, []);
+
+  const payInstallment = useCallback((installmentId: string, walletId: string) => {
+    const today = getTodayISO();
+    const currentMonth = getMonthKey(today);
+
+    setData((prev) => {
+      const target = prev.installments.find((i) => i.id === installmentId);
+      if (!target || target.paidMonths >= target.totalMonths) return prev;
+
+      const nextPaid = target.paidMonths + 1;
+      const newTx: Transaction = {
+        id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: 'expense',
+        amount: target.monthlyAmount,
+        walletId,
+        categoryId: 'c-bills',
+        note: `Cicilan ${target.name} (${nextPaid}/${target.totalMonths})`,
+        date: today,
+        createdAt: Date.now(),
+      };
+
+      return {
+        ...prev,
+        transactions: [newTx, ...prev.transactions],
+        installments: prev.installments.map((i) =>
+          i.id === installmentId
+            ? { ...i, paidMonths: nextPaid, lastPaidMonth: currentMonth }
+            : i
+        ),
+      };
+    });
+  }, []);
+
+  const deleteInstallment = useCallback((id: string) => {
+    setData((prev) => ({
+      ...prev,
+      installments: prev.installments.filter((i) => i.id !== id),
+    }));
+  }, []);
+
   const updateCategoryBudget = useCallback((id: string, monthlyBudget?: number) => {
     setData((prev) => ({
       ...prev,
@@ -202,6 +253,7 @@ export function useWalletStore() {
         wallets: parsed.wallets,
         categories: Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES,
         transactions: parsed.transactions,
+        installments: Array.isArray(parsed.installments) ? parsed.installments : [],
         hideBalances: Boolean(parsed.hideBalances),
       });
       return true;
@@ -220,6 +272,17 @@ export function useWalletStore() {
       { id: 's4', type: 'expense', amount: 28000, walletId: 'w-ewallet', categoryId: 'c-transport', note: 'Ojek online', date: today, createdAt: Date.now() - 3600000 * 1 },
       { id: 's5', type: 'expense', amount: 350000, walletId: 'w-bank', categoryId: 'c-bills', note: 'Internet & Listrik', date: `${month}-05`, createdAt: Date.now() - 86400000 * 2 },
     ];
+    const sampleInstallments: Installment[] = [
+      {
+        id: 'si-1',
+        name: 'SPayLater Smartphone',
+        monthlyAmount: 550000,
+        totalMonths: 12,
+        paidMonths: 3,
+        dueDay: 5,
+        principalAmount: 6000000,
+      },
+    ];
     setData({
       wallets: [
         { id: 'w-cash', name: 'Tunai', type: 'cash', initialBalance: 350000, color: '#059669' },
@@ -228,6 +291,7 @@ export function useWalletStore() {
       ],
       categories: DEFAULT_CATEGORIES,
       transactions: sampleTx,
+      installments: sampleInstallments,
       hideBalances: false,
     });
   }, []);
@@ -248,6 +312,9 @@ export function useWalletStore() {
     deleteTransaction,
     addWallet,
     deleteWallet,
+    addInstallment,
+    payInstallment,
+    deleteInstallment,
     updateCategoryBudget,
     toggleHideBalances,
     exportJSON,
